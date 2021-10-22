@@ -8,18 +8,14 @@ use structopt::StructOpt;
 	about = crate_description!(),
     author = crate_authors!()
 )]
-
 pub struct Opt {
-    #[structopt(long)]
-    pub data: Option<String>,
-
 	#[structopt(subcommand)]
     pub cmd: Option<Command>,
 }
 
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "command", about = "the stupid content tracker")]
+#[structopt(name = "command")]
 pub enum Command {
 	#[structopt(
 		name = "set",

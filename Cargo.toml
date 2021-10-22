@@ -2,7 +2,8 @@
 name = "kvs"
 version = "0.1.0"
 edition = "2018"
-description="A key value server"
+description = "A key value server"
+authors = ["Sampras Lopes"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
