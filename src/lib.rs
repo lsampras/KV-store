@@ -5,3 +5,8 @@ mod tests {
         assert_eq!(2 + 2, 4);
     }
 }
+
+mod store;
+
+pub mod cli;
+pub use store::KvStore;

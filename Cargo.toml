@@ -2,7 +2,12 @@
 name = "kvs"
 version = "0.1.0"
 edition = "2018"
+description="A key value server"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+assert_cmd = "2.0.2"
+clap = "2.33.3"
+predicates = "2.0.3"
+structopt = "0.3.25"

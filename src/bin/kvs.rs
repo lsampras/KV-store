@@ -1,3 +1,7 @@
+use kvs::cli::Opt;
+use structopt::StructOpt;
+
 fn main() {
-    println!("Hello, world!");
+	let opt = Opt::from_args();
+	println!("{:?}, {:?}", opt.data, opt.cmd.unwrap());
 }
