@@ -1,12 +1,7 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
-
+#![deny(missing_docs)]
+//! # kvs
+//!
+//! `kvs` is a key value store
+//! this lib is create to learn rust
 mod store;
-
-pub mod cli;
 pub use store::KvStore;
