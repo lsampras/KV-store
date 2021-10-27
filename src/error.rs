@@ -2,6 +2,7 @@ use std::io;
 use failure::{Fail};
 use bson::{ser, de};
 use std::sync::Arc;
+use std::convert::From;
 /// A type alias for using KVError as part of results
 pub type KVResult<T> = Result<T, KVError>;
 
