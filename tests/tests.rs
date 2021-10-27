@@ -120,8 +120,8 @@ fn get_stored_value() {
     store.set("key1".to_owned(), "value1".to_owned());
     store.set("key2".to_owned(), "value2".to_owned());
 
-    assert_eq!(store.get("key1".to_owned()), Some("value1".to_owned()));
-    assert_eq!(store.get("key2".to_owned()), Some("value2".to_owned()));
+    assert_eq!(store.get("key1".to_owned()), Ok("value1".to_owned()));
+    assert_eq!(store.get("key2".to_owned()), Ok("value2".to_owned()));
 }
 
 // Should overwrite existent value
