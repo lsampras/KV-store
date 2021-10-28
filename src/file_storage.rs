@@ -1,46 +1,24 @@
-use std::io::{BufReader, BufWriter, ErrorKind};
+use std::io::{BufReader, BufWriter, ErrorKind, SeekFrom};
 use std::io::prelude::*;
 use std::fs::{File, OpenOptions};
-use std::sync::{Arc, Mutex};
 use bson;
 use bson::{de, from_document, Document, to_vec};
 use crate::command::LogRecord;
-use crate::error::KVResult;
-use crate::error::KVError;
+use crate::error::{KVResult, KVError};
 
-
-/// Log Reader is an iterator over LogRecords that are read from the storage file
-#[derive(Debug)]
-pub struct LogReader {
-	read_buf: BufReader<File>,
-	log_reads_pending: bool
-}
-
-impl Iterator for LogReader {
-	type Item = KVResult<LogRecord>;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		match Document::from_reader(&mut self.read_buf) {
-			Ok(doc) =>  Some(from_document::<LogRecord>(doc).map_err(|e| KVError::Deserialization(e))),
-			Err(de::Error::Io(i)) => {
-				if i.kind() == ErrorKind::UnexpectedEof {
-					self.log_reads_pending = false;
-					None
-				} else {
-					return Some(Err(KVError::Io(i)));
-				}
-			},
-			Err(i) => Some(Err(KVError::Deserialization(i))),
-		}
-	}
+/// Log Pointer representing the position of a LogRecord in file
+#[derive(Debug, Clone, Copy)]
+pub struct LogPointer {
+	offset: u64,
 }
 
 /// Create a struct with an enum which would handle all operations of files
 /// this struct can maintain state & ownership of internal buffers
-
+#[derive(Debug)]
 pub struct StorageHandler {
-	reader: Arc<Mutex<LogReader>>,
 	writer: BufWriter<File>,
+	filename: String,
+	current_offset: u64
 }
 
 impl StorageHandler {
@@ -48,54 +26,75 @@ impl StorageHandler {
 	/// This method takes in a filename (path) to be used as storage
 	pub fn new(filename: String) -> KVResult<Self> {
 		let mut log_reads_pending = true;
-		let file = OpenOptions::new().read(true).write(true).open(&filename)
+		let mut file = OpenOptions::new().read(true).write(true).open(&filename)
 			// .and_then(|val| populate_index(val))
-			.or_else(|err| 
+			.or_else::<KVError, _>(|err| 
 				match err.kind() {
-					ErrorKind::NotFound => {println!("file not found");log_reads_pending = false;open_new_log_file(filename)},
-					_ => Err(KVError::from(err))
+					ErrorKind::NotFound => {log_reads_pending = false;Ok(open_new_log_file(&filename)?)},
+					_ => Err(err)?
 				}
 			)?;
-		let log_reader = Arc::new(Mutex::new(LogReader {
-			read_buf: BufReader::new(file.try_clone()?),
-			log_reads_pending: log_reads_pending
-		}));
+		let offset = file.seek(SeekFrom::End(0))?;
 		Ok(StorageHandler{
-			reader: log_reader,
 			writer: BufWriter::new(file),
+			filename: filename,
+			current_offset: offset
 		})
 	}
 
-	/// Indicates whether any logs are not yet read
-	/// All existing logs should be read and stored in memory before writing anything
-	pub fn is_read_pending(&self) -> bool {
-		//! since we are not using multiple threads yet we'll do a simple unwrap here
-		self.reader.lock().unwrap().log_reads_pending
-	}
-
-	/// Get an iterator for reading log records from underlying storage file
-	/// this returns a singleton logreader so make sure that the data is stored properly
-	/// since consuming this iterator will lose access to all the read data
-	pub fn get_log_reader(&mut self) -> Arc<Mutex<LogReader>> {
-		self.reader.clone()
-	}
-
 	/// return usize here so that index map can be constructed by store
-	pub fn write_record(&mut self, record: LogRecord) -> KVResult<usize> {
-		if self.is_read_pending() {
-			return Err(KVError::Default("Need to read existing logs before writing".to_string()));
+	pub fn write_record(&mut self, record: LogRecord) -> KVResult<LogPointer> {
+		let write_pos = self.current_offset;
+		self.current_offset += self.writer.write(
+		to_vec(&record)?.as_slice()
+		)? as u64;
+		self.writer.flush()?;
+		Ok(LogPointer{offset: write_pos})
+	}
+
+	/// read a Logrecord from underlying logs using a LogPointer 
+	pub fn read_log_record_with_pointer(&self, pointer: &LogPointer) -> KVResult<LogRecord> {
+		let mut file = File::open(&self.filename)?;
+		file.seek(SeekFrom::Start(pointer.offset))?;
+		let mut reader = BufReader::new(file);
+		Ok(Document::from_reader(&mut reader)
+					.and_then(|doc| Ok(from_document::<LogRecord>(doc)?))?
+			)
+	}
+	/// read all logs
+	pub fn read_all_logs(&self) -> KVResult<Vec<(LogPointer, LogRecord)>>{
+		let mut records: Vec<(LogPointer, LogRecord)> = vec![];
+		let mut file_offset: u64 = 0;
+
+		let file = OpenOptions::new().read(true).open(&self.filename)?;
+		let mut read_buf  = BufReader::new(file);
+		loop {
+			match Document::from_reader(&mut read_buf) {
+				Ok(doc) =>  {
+					let doc_len = to_vec(&doc)?.len() as u64;
+					let record = from_document::<LogRecord>(doc).map_err(|e| KVError::Deserialization(e))?;
+					records.push((LogPointer{offset:file_offset}, record));
+					file_offset += doc_len;
+
+				},
+				Err(de::Error::Io(i)) => {
+					if i.kind() == ErrorKind::UnexpectedEof {
+						break;
+					} else {
+						return Err(KVError::Io(i));
+					}
+				},
+				Err(i) => return Err(KVError::from(i)),
+			};
 		}
-		Ok(self.writer.write(
-		to_vec(&record).map_err(|err| KVError::Serialization(err))?.as_slice()
-		)?)
+		Ok(records)
 	}
 }
 
-fn open_new_log_file(filename: String) -> KVResult<File> {
-	OpenOptions::new()
+fn open_new_log_file(filename: &String) -> KVResult<File> {
+	Ok(OpenOptions::new()
 				.create(true)
 				.read(true)
 				.write(true)
-				.open(filename)
-				.map_err(|err| KVError::from(err))
+				.open(filename)?)
 }

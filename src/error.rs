@@ -39,3 +39,15 @@ impl From<io::Error> for KVError {
         KVError::Io(Arc::new(error))
     }
 }
+
+impl From<de::Error> for KVError {
+    fn from(error: de::Error) ->  Self{
+        KVError::Deserialization(error)
+    }
+}
+
+impl From<ser::Error> for KVError {
+    fn from(error: ser::Error) ->  Self{
+        KVError::Serialization(error)
+    }
+}

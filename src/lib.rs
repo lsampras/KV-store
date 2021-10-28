@@ -12,4 +12,4 @@ pub mod error;
 pub mod command;
 
 pub use store::KvStore;
-pub use file_storage::{StorageHandler, LogReader};
+pub use file_storage::{StorageHandler, LogPointer};

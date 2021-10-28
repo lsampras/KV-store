@@ -45,7 +45,7 @@ fn run_kv_command(command: Command) -> KVResult<()> {
 	let mut store = KvStore::new()?;
 	Ok(match command {
 		Command::Set{key, value} => store.set(key, value)?,
-		Command::Get{key} => println!("{}", store.get(key)?),
+		Command::Get{key} => println!("{}", store.get(key)?.unwrap_or("No key found".to_string())),
 		Command::Delete{key} => store.remove(key)?,
 	})
 }
