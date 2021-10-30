@@ -15,14 +15,10 @@ impl KvStore {
 	/// Create a new KvStore
 	/// the store can then be used to set, get or delete keys
 	pub fn new() -> KVResult<Self> {
-		let mut storage = StorageHandler::new("foo2.txt".to_string())?;
+		let mut storage = StorageHandler::new()?;
 		let mut index_map = HashMap::new();
-		for (pointer, record) in storage.read_all_logs()?.iter() {
-			let key = match &*record {
-				LogRecord::Delete(key) => key,
-				LogRecord::Set(key, val) => key
-			};
-			index_map.insert(key.to_owned(), *pointer);
+		for (pointer, key) in storage.read_all_logs()?.iter().cloned() {
+			index_map.insert(key, pointer);
 		}
 		Ok(KvStore {
 			index_store: index_map,
@@ -60,5 +56,15 @@ impl KvStore {
 		let pointer = self.storage.write_record(LogRecord::Delete(key.clone()))?;
 		self.index_store.insert(key, pointer);
 		Ok(())
+	}
+
+	/// compact logs for stuff
+	pub fn compaction(&mut self) -> KVResult<Vec<(String, LogPointer)>> {
+		self.storage.compact_logs()
+	}
+
+	/// print internal state for debug
+	pub fn state_print(&self) {
+		println!("{:?}\n\n{:?}", self.index_store, self.storage);
 	}
 }

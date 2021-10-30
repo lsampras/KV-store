@@ -10,3 +10,13 @@ pub enum LogRecord {
 	#[serde(rename="d")]
 	Delete(String)
 }
+
+impl LogRecord {
+	/// get key for a record
+	pub fn get_key(&self) -> String {
+		match &self {
+			LogRecord::Delete(i) => i,
+			LogRecord::Set(i, _) => i
+		}.to_owned()
+	}
+}
