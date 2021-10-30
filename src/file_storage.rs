@@ -11,7 +11,8 @@ use crate::error::{KVResult, KVError};
 #[derive(Debug, Clone)]
 pub struct LogPointer {
 	offset: u64,
-	log_age: u8,
+	/// determines the age for logs to be used when swapping out olg logs for newer ones
+	pub log_age: u8,
 	filename: String
 }
 
@@ -20,7 +21,6 @@ pub struct LogPointer {
 #[derive(Debug)]
 pub struct StorageHandler {
 	writer: BufWriter<File>,
-	filename: String,
 	current_offset: u64,
 	compaction_index: u8,
 	compacted_files: Vec<String>,
@@ -44,7 +44,6 @@ impl StorageHandler {
 		let offset = file.seek(SeekFrom::End(0))?;
 		Ok(StorageHandler{
 			writer: BufWriter::new(file),
-			filename: filename.clone(),
 			current_offset: offset,
 			compaction_index: 0,
 			compacted_files: vec![],
@@ -63,7 +62,7 @@ impl StorageHandler {
 		to_vec(&record)?.as_slice()
 		)? as u64;
 		self.writer.flush()?;
-		Ok(LogPointer{offset: write_pos, log_age: self.compaction_index, filename: self.filename.clone()})
+		Ok(LogPointer{offset: write_pos, log_age: self.compaction_index, filename: self.current_wal()})
 	}
 
 	/// read a Logrecord from underlying logs using a LogPointer 
@@ -124,13 +123,13 @@ impl StorageHandler {
 		let current_wal_to_be_compacted = self.current_wal();
 		let current_compaction_target = self.compaction_index;
 		self.refresh_bufwriter()?;
-		for (pointer, key) in self.read_all_logs_from_file(&current_wal_to_be_compacted)?.iter().cloned() {
+		for (pointer, key) in self.read_all_logs_from_file(&current_wal_to_be_compacted)? {
 			total_log_pointers.insert(key, pointer);
 		}
 		if current_compaction_target > 0 {
 			let current_compacted_file = format!("compacted_{}.txt", current_compaction_target - 1);
 
-			for (pointer, key) in self.read_all_logs_from_file(&current_compacted_file)?.iter().cloned() {
+			for (pointer, key) in self.read_all_logs_from_file(&current_compacted_file)? {
 				total_log_pointers.insert(key, pointer);
 			}
 		}

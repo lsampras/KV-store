@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use crate::error::{KVResult};
 use crate::{LogPointer, StorageHandler};
 use crate::command::LogRecord;
@@ -17,7 +18,7 @@ impl KvStore {
 	pub fn new() -> KVResult<Self> {
 		let mut storage = StorageHandler::new()?;
 		let mut index_map = HashMap::new();
-		for (pointer, key) in storage.read_all_logs()?.iter().cloned() {
+		for (pointer, key) in storage.read_all_logs()? {
 			index_map.insert(key, pointer);
 		}
 		Ok(KvStore {
@@ -58,9 +59,16 @@ impl KvStore {
 		Ok(())
 	}
 
-	/// compact logs for stuff
-	pub fn compaction(&mut self) -> KVResult<Vec<(String, LogPointer)>> {
-		self.storage.compact_logs()
+	/// compact logs for stuff 
+	pub fn compaction(&mut self) -> KVResult<()> {
+		for (key, pointer) in self.storage.compact_logs()? {
+			self.index_store.entry(key).and_modify(|existing| {
+				if existing.log_age < pointer.log_age {
+					*existing = pointer
+				}
+			});
+		}
+		Ok(())
 	}
 
 	/// print internal state for debug
