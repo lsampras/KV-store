@@ -4,7 +4,7 @@ use std::process::exit;
 use kvs::{KvStore, error::KVResult};
 #[derive(StructOpt)]
 #[structopt(
-    name = "Key-Value Server",
+    name = "Key-Value Client",
 	about = crate_description!(),
     author = crate_authors!()
 )]
