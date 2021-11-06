@@ -2,8 +2,7 @@ use std::io::{BufReader, BufWriter, ErrorKind, SeekFrom};
 use std::io::prelude::*;
 use std::fs::{File, OpenOptions};
 use std::collections::BTreeMap;
-use bson;
-use bson::{de, from_document, Document, to_vec};
+use bson::{self, de, from_document, Document, to_vec};
 use crate::command::LogRecord;
 use crate::error::{KVResult, KVError};
 
