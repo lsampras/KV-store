@@ -2,9 +2,9 @@ use clap::{crate_authors, crate_description};
 use structopt::StructOpt;
 use std::net::{TcpStream, Shutdown};
 use std::{process::exit, str};
-use kvs::{KvStore, error::KVResult};
-use std::io::{Read, Write, Cursor};
-use bson::{to_vec, from_document, Document};
+use kvs::error::KVResult;
+use std::io::{Read, Write};
+use bson::to_vec;
 use serde::{Serialize, Deserialize};
 
 #[derive(StructOpt)]

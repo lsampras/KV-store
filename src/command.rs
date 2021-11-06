@@ -24,6 +24,7 @@ impl LogRecord {
 		}.to_owned()
 	}
 
+	/// Create a log record from raw bytes
 	pub fn from_bytes(bytes: &mut [u8]) -> KVResult<Self> {
 		let mut reader = Cursor::new(bytes);
 		Ok(from_document::<LogRecord>(Document::from_reader(&mut reader)?)?)

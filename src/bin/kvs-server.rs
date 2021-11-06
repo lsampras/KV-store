@@ -1,13 +1,18 @@
 use clap::{crate_authors, crate_description, crate_version};
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
-use kvs::{error::KVResult, logging::{create_logger}, KvStore};
+use kvs::{KvStore, error::KVResult, logging::{create_logger}, traits::KvsEngine};
 use std::io::{Read, Write, BufReader, Cursor};
 use std::net::{TcpListener, Shutdown};
+use std::process::exit;
 use bson::{Document, from_document};
+use std::str;
 
 #[macro_use]
 extern crate slog;
+extern crate sled;
+
+use sled::Db;
 #[derive(StructOpt)]
 #[structopt(
     name = "Key-Value Server",
@@ -55,13 +60,39 @@ pub fn from_bytes(bytes: &mut [u8]) -> KVResult<Command> {
 	Ok(from_document::<Command>(Document::from_reader(&mut reader)?)?)
 }
 
-fn run_kv_command(store: &mut KvStore, command: Command) -> KVResult<Option<String>> {
+fn run_kv_command<T: KvsEngine + ?Sized>(store: &mut Box<T>, command: Command) -> KVResult<Option<String>> {
 	// let mut store = KvStore::new()?;
 	Ok(match command {
 		Command::Set{key, value} => {store.set(key, value)?;None},
 		Command::Get{key} => Some(store.get(key)?.unwrap_or("No key found".to_string())),
 		Command::Delete{key} => {store.remove(key)?; None},
 	})
+}
+
+struct Sled {
+	db: Db
+}
+
+impl KvsEngine for Sled {
+
+	/// Get the value of a key in a KvStore
+	fn get(&self, key: String) -> KVResult<Option<String>> {
+		Ok(
+			self.db.get(key).unwrap()
+				.and_then(|i| Some(str::from_utf8(i.as_ref()).unwrap().to_owned())))
+	}
+
+	/// Add or update the value of an existing key
+	fn set(&mut self, key: String, value: String) -> KVResult<()> {
+		self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
+		Ok(())
+	}
+
+	/// clear a given key from kv store
+	fn remove(&mut self, key: String) -> KVResult<()> {
+		self.db.remove(key.as_bytes()).unwrap();
+		Ok(())
+	}
 }
 
 #[allow(unused)]
@@ -75,7 +106,16 @@ fn main() -> KVResult<()>{
 		"Starting KVS Server version {version}\n with address {address} and engine {storage}",
 		version=crate_version!(), address=&url, storage=&engine
 	);
-	let mut store = KvStore::new()?;
+	let mut store: Box<KvsEngine>;
+	match engine.as_str() {
+		"kvs" => {store = Box::new(KvStore::new()?);},
+		"sled" => {
+			store = Box::new(Sled {
+				db: sled::open("sled.txt").unwrap()
+			})
+		},
+		_ => {println!("Storage Engine not supported");exit(1);}
+	};
 	let listener = TcpListener::bind(url)?;
 	for stream in listener.incoming() {
 		let mut buffer = vec![];

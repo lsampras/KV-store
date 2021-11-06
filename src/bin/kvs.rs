@@ -1,7 +1,7 @@
 use clap::{crate_authors, crate_description};
 use structopt::StructOpt;
 use std::process::exit;
-use kvs::{KvStore, error::KVResult};
+use kvs::{KvStore, error::KVResult, traits::KvsEngine};
 #[derive(StructOpt)]
 #[structopt(
     name = "Key-Value Client",
