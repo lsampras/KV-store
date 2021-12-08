@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 //! # kvs
 //!
 //! `kvs` is a key value store
@@ -22,3 +22,12 @@ pub use store::KvStore;
 /// File storage utils for built-in key values
 pub use file_storage::{StorageHandler, LogPointer};
 
+#[macro_export]
+macro_rules! guard {
+    ($name:ident) => {
+        Arc::new(Mutex::new($name))
+    };
+    ($name:literal) => {
+        Arc::new(Mutex::new($name))
+    };
+}

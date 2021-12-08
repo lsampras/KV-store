@@ -1,10 +1,16 @@
-use std::io::{BufReader, BufWriter, ErrorKind, SeekFrom};
-use std::io::prelude::*;
-use std::fs::{File, OpenOptions};
-use std::collections::BTreeMap;
+use std::{
+	io::{BufReader, BufWriter, ErrorKind, SeekFrom, prelude::*},
+	fs::{File, OpenOptions},
+	collections::BTreeMap,
+	sync::{RwLock, Arc, Mutex}
+};
 use bson::{self, de, from_document, Document, to_vec};
-use crate::command::LogRecord;
-use crate::error::{KVResult, KVError};
+use crate::{
+	command::LogRecord,
+	error::{KVResult, KVError},
+	traits::Guarded,
+	guard
+};
 
 /// Log Pointer representing the position of a LogRecord in file
 #[derive(Debug, Clone)]
@@ -19,11 +25,11 @@ pub struct LogPointer {
 /// this struct can maintain state & ownership of internal buffers
 #[derive(Debug)]
 pub struct StorageHandler {
-	writer: BufWriter<File>,
-	current_offset: u64,
-	compaction_index: u8,
-	compacted_files: Vec<String>,
-	temp_files: Vec<String>,
+	writer: Guarded<BufWriter<File>>,
+	current_offset: Guarded<u64>,
+	compaction_index: Guarded<u8>,
+	compacted_files: RwLock<Vec<String>>,
+	temp_files: RwLock<Vec<String>>,
 }
 
 impl StorageHandler {
@@ -41,27 +47,30 @@ impl StorageHandler {
 				}
 			)?;
 		let offset = file.seek(SeekFrom::End(0))?;
+		let writer = BufWriter::new(file);
 		Ok(StorageHandler{
-			writer: BufWriter::new(file),
-			current_offset: offset,
-			compaction_index: 0,
-			compacted_files: vec![],
-			temp_files: vec![filename]
+			writer: guard!(writer),
+			current_offset: guard!(offset),
+			compaction_index: guard!(0),
+			compacted_files: RwLock::new(vec![]),
+			temp_files: RwLock::new(vec![filename])
 		})
 	}
 
-	fn current_wal(&self) -> String {
-		self.temp_files.get(self.compaction_index as usize).unwrap().to_owned()
+	fn current_wal(&self) -> KVResult<String> {
+		Ok(self.temp_files.read()?.get(*self.compaction_index.lock()? as usize).unwrap().to_owned())
 	}
 
 	/// return usize here so that index map can be constructed by store
-	pub fn write_record(&mut self, record: LogRecord) -> KVResult<LogPointer> {
-		let write_pos = self.current_offset;
-		self.current_offset += self.writer.write(
-		to_vec(&record)?.as_slice()
-		)? as u64;
-		self.writer.flush()?;
-		Ok(LogPointer{offset: write_pos, log_age: self.compaction_index, filename: self.current_wal()})
+	pub fn write_record(&self, record: LogRecord) -> KVResult<LogPointer> {
+		let mut write_pos = self.current_offset.lock()?;
+		if let Ok(mut writer) = self.writer.lock() {
+			*write_pos += writer.write(
+			to_vec(&record)?.as_slice()
+			)? as u64;
+			writer.flush()?;
+		}
+		Ok(LogPointer{offset: *write_pos, log_age: *self.compaction_index.lock()?, filename: self.current_wal()?})
 	}
 
 	/// read a Logrecord from underlying logs using a LogPointer 
@@ -76,7 +85,7 @@ impl StorageHandler {
 	/// read all logs
 	/// TODO: use a hint file that contains all log pointers
 	pub fn read_all_logs(&self) -> KVResult<Vec<(LogPointer, String)>>{
-		self.read_all_logs_from_file(&self.current_wal())
+		self.read_all_logs_from_file(&self.current_wal()?)
 	}
 
 	fn read_all_logs_from_file(&self, filename: &String) -> KVResult<Vec<(LogPointer, String)>> {
@@ -90,7 +99,7 @@ impl StorageHandler {
 				Ok(doc) =>  {
 					let doc_len = to_vec(&doc)?.len() as u64;
 					let record = from_document::<LogRecord>(doc)?;
-					records.push((LogPointer{offset:file_offset, log_age:self.compaction_index, filename: filename.to_owned()}, record.get_key()));
+					records.push((LogPointer{offset:file_offset, log_age:*self.compaction_index.lock()?, filename: filename.to_owned()}, record.get_key()));
 					file_offset += doc_len;
 
 				},
@@ -107,20 +116,23 @@ impl StorageHandler {
 		Ok(records)
 	}
 
-	fn refresh_bufwriter(&mut self) -> KVResult<()> {
-		let new_filename = format!("foo_{}.txt", self.compaction_index + 1);
-		self.temp_files.push(new_filename.clone());
+	fn refresh_bufwriter(&self) -> KVResult<()> {
+		let new_filename = format!("foo_{}.txt", *self.compaction_index.lock()? + 1);
+		self.temp_files.write()?.push(new_filename.clone());
 		let new_wal_file = File::create(&new_filename)?;
-		self.writer = BufWriter::new(new_wal_file);
-		self.compaction_index += 1;
+		let new_writer = BufWriter::new(new_wal_file);
+		let mut current_writer = self.writer.lock()?;
+		*current_writer = new_writer;
+		let mut compaction_index = self.compaction_index.lock()?;
+		*compaction_index += 1;
 		Ok(())
 	}
 
 	/// compact logs to an immutable file
-	pub fn compact_logs(&mut self) -> KVResult<Vec<(String, LogPointer)>> {
+	pub fn compact_logs(&self) -> KVResult<Vec<(String, LogPointer)>> {
 		let mut total_log_pointers = BTreeMap::new();
-		let current_wal_to_be_compacted = self.current_wal();
-		let current_compaction_target = self.compaction_index;
+		let current_wal_to_be_compacted = self.current_wal()?;
+		let current_compaction_target = *self.compaction_index.lock()?;
 		self.refresh_bufwriter()?;
 		for (pointer, key) in self.read_all_logs_from_file(&current_wal_to_be_compacted)? {
 			total_log_pointers.insert(key, pointer);
@@ -149,7 +161,7 @@ impl StorageHandler {
 			write_pos += incr;
 			updated_pointers.push((i, pointer));
 		}
-		self.compacted_files.push(compact_filename);
+		self.compacted_files.write()?.push(compact_filename);
 		Ok(updated_pointers)
 	}
 }

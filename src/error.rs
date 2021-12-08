@@ -1,7 +1,7 @@
 use std::io;
 use failure::{Fail};
 use bson::{ser, de};
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 use std::convert::From;
 /// A type alias for using KVError as part of results
 pub type KVResult<T> = Result<T, KVError>;
@@ -49,5 +49,11 @@ impl From<de::Error> for KVError {
 impl From<ser::Error> for KVError {
     fn from(error: ser::Error) ->  Self{
         KVError::Serialization(error)
+    }
+}
+
+impl<T > From<PoisonError<T>> for KVError {
+    fn from(error: PoisonError<T>) ->  KVError {
+        KVError::Default(error.to_string())
     }
 }

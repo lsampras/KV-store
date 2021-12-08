@@ -83,13 +83,13 @@ impl KvsEngine for Sled {
 	}
 
 	/// Add or update the value of an existing key
-	fn set(&mut self, key: String, value: String) -> KVResult<()> {
+	fn set(&self, key: String, value: String) -> KVResult<()> {
 		self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
 		Ok(())
 	}
 
 	/// clear a given key from kv store
-	fn remove(&mut self, key: String) -> KVResult<()> {
+	fn remove(&self, key: String) -> KVResult<()> {
 		self.db.remove(key.as_bytes()).unwrap();
 		Ok(())
 	}
@@ -106,7 +106,7 @@ fn main() -> KVResult<()>{
 		"Starting KVS Server version {version}\n with address {address} and engine {storage}",
 		version=crate_version!(), address=&url, storage=&engine
 	);
-	let mut store: Box<KvsEngine>;
+	let mut store: Box<dyn KvsEngine>;
 	match engine.as_str() {
 		"kvs" => {store = Box::new(KvStore::new()?);},
 		"sled" => {
