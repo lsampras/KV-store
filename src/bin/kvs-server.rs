@@ -1,12 +1,13 @@
 use clap::{crate_authors, crate_description, crate_version};
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
-use kvs::{KvStore, error::KVResult, logging::{create_logger}, traits::KvsEngine};
+use kvs::{KvStore, error::KVResult, logging::{create_logger}, traits::KvsEngine, threadpool::NaiveThreadPool};
 use std::io::{Read, Write, BufReader, Cursor};
 use std::net::{TcpListener, Shutdown};
 use std::process::exit;
 use bson::{Document, from_document};
 use std::str;
+use std::sync::Arc;
 
 #[macro_use]
 extern crate slog;
@@ -54,13 +55,14 @@ pub enum Command {
 	},
 }
 
-
 pub fn from_bytes(bytes: &mut [u8]) -> KVResult<Command> {
 	let mut reader = Cursor::new(bytes);
 	Ok(from_document::<Command>(Document::from_reader(&mut reader)?)?)
 }
 
-fn run_kv_command<T: KvsEngine + ?Sized>(store: &mut Box<T>, command: Command) -> KVResult<Option<String>> {
+fn run_kv_command<T>(store: &Box<T>, command: Command) -> KVResult<Option<String>>
+	where T: KvsEngine,
+{
 	// let mut store = KvStore::new()?;
 	Ok(match command {
 		Command::Set{key, value} => {store.set(key, value)?;None},
@@ -69,8 +71,9 @@ fn run_kv_command<T: KvsEngine + ?Sized>(store: &mut Box<T>, command: Command) -
 	})
 }
 
+#[derive(Debug, Clone)]
 struct Sled {
-	db: Db
+	db: Box<Db>
 }
 
 impl KvsEngine for Sled {
@@ -95,44 +98,63 @@ impl KvsEngine for Sled {
 	}
 }
 
+
 #[allow(unused)]
 fn main() -> KVResult<()>{
 	let opt = Opt::from_args();
 	println!("{:?}, {:?}", opt.addr, opt.engine);
 	let url = opt.addr;
-	let engine = opt.engine;
-	let logger = create_logger();
+	let engine = Arc::new(opt.engine);
+
+	let logger = Arc::new(create_logger());
 	info!(logger,
 		"Starting KVS Server version {version}\n with address {address} and engine {storage}",
 		version=crate_version!(), address=&url, storage=&engine
 	);
-	let mut store: Box<dyn KvsEngine>;
-	match engine.as_str() {
-		"kvs" => {store = Box::new(KvStore::new()?);},
-		"sled" => {
-			store = Box::new(Sled {
-				db: sled::open("sled.txt").unwrap()
-			})
-		},
-		_ => {println!("Storage Engine not supported");exit(1);}
-	};
 	let listener = TcpListener::bind(url)?;
+	let mut threads = NaiveThreadPool::new(6);
+	threads.initialize_pool();
 	for stream in listener.incoming() {
-		let mut buffer = vec![];
-		let mut tcp_stream = stream?;
-        let mut reader = BufReader::new(&tcp_stream);
-		reader.read_to_end(&mut buffer)?;
-		info!(logger, "Bytes receievd: {:?}", &buffer);
-		tcp_stream.shutdown(Shutdown::Read)?;
-		match run_kv_command(&mut store, from_bytes(&mut buffer)?)? {
-			Some(str) => {
-				info!(logger, "writing {:?}", str.as_bytes());
-				tcp_stream.write(str.as_bytes())?;
-				tcp_stream.flush()?;
-			},
-			_ => {}
-		};
-		tcp_stream.shutdown(Shutdown::Write)?;
+		let logger2 = logger.clone();
+		let engine2 = engine.clone();
+		threads.spawn(move || {
+			let mut buffer = vec![];
+			let mut tcp_stream = stream.unwrap();
+			let mut reader = BufReader::new(&tcp_stream);
+			reader.read_to_end(&mut buffer).unwrap();
+			info!(logger2, "Bytes receievd: {:?}", &buffer);
+			tcp_stream.shutdown(Shutdown::Read).unwrap();
+			match engine2.as_str() {
+				"kvs" => {
+					let store = Box::new(KvStore::new().unwrap());
+	
+					match run_kv_command(&store, from_bytes(&mut buffer).unwrap()).unwrap() {
+						Some(str) => {
+							info!(logger2, "writing {:?}", str.as_bytes());
+							tcp_stream.write(str.as_bytes()).unwrap();
+							tcp_stream.flush().unwrap();
+						},
+						_ => {}
+					};
+				},
+				"sled" => {
+					let store = Box::new(Sled {
+						db: Box::new(sled::open("sled.txt").unwrap())
+					});
+	
+					match run_kv_command(&store, from_bytes(&mut buffer).unwrap()).unwrap() {
+						Some(str) => {
+							info!(logger2, "writing {:?}", str.as_bytes());
+							tcp_stream.write(str.as_bytes()).unwrap();
+							tcp_stream.flush().unwrap();
+						},
+						_ => {}
+					};
+				},
+				_ => {println!("Storage Engine not supported");exit(1);}
+			};
+			tcp_stream.shutdown(Shutdown::Write).unwrap();
+		});
     }
 	Ok(())
 }

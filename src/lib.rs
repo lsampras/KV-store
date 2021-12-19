@@ -13,6 +13,8 @@ pub mod command;
 
 /// Structured logging utils
 pub mod logging;
+/// Structured logging utils
+pub mod threadpool;
 
 /// Implementing common traits for storage engine
 pub mod traits;

@@ -3,7 +3,7 @@ use crate::error::{KVResult};
 
 pub type Guarded<T> = Arc<Mutex<T>>;
 /// Public storage engine trait that would be used by the db server
-pub trait KvsEngine: Sync + Send {
+pub trait KvsEngine: Clone + Send + 'static + Sized {
 	/// Get value for a stored string key
 	/// The value are both expected to be strings
 	/// return none incase of no key available

@@ -23,13 +23,13 @@ pub struct LogPointer {
 
 /// Create a struct with an enum which would handle all operations of files
 /// this struct can maintain state & ownership of internal buffers
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StorageHandler {
 	writer: Guarded<BufWriter<File>>,
 	current_offset: Guarded<u64>,
 	compaction_index: Guarded<u8>,
-	compacted_files: RwLock<Vec<String>>,
-	temp_files: RwLock<Vec<String>>,
+	compacted_files: Arc<RwLock<Vec<String>>>,
+	temp_files: Arc<RwLock<Vec<String>>>,
 }
 
 impl StorageHandler {
@@ -52,8 +52,8 @@ impl StorageHandler {
 			writer: guard!(writer),
 			current_offset: guard!(offset),
 			compaction_index: guard!(0),
-			compacted_files: RwLock::new(vec![]),
-			temp_files: RwLock::new(vec![filename])
+			compacted_files: Arc::new(RwLock::new(vec![])),
+			temp_files: Arc::new(RwLock::new(vec![filename]))
 		})
 	}
 
@@ -70,7 +70,8 @@ impl StorageHandler {
 			)? as u64;
 			writer.flush()?;
 		}
-		Ok(LogPointer{offset: *write_pos, log_age: *self.compaction_index.lock()?, filename: self.current_wal()?})
+		let index = *self.compaction_index.lock()?;
+		Ok(LogPointer{offset: *write_pos, log_age: index, filename: self.current_wal()?})
 	}
 
 	/// read a Logrecord from underlying logs using a LogPointer 

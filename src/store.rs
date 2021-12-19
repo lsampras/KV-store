@@ -1,14 +1,14 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{RwLock, Arc};
 use crate::error::{KVResult};
 use crate::{LogPointer, StorageHandler};
 use crate::command::LogRecord;
 use crate::traits::{KvsEngine};
 /// KvStore handling the operations of a (persistent) key-value store
 /// It allows you to set, get or delete keys in the underlying kv store
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KvStore {
-	index_store: RwLock<HashMap<String, LogPointer>>,
+	index_store: Arc<RwLock<HashMap<String, LogPointer>>>,
 	storage: StorageHandler
 }
 
@@ -61,7 +61,7 @@ impl KvStore {
 			index_map.insert(key, pointer);
 		}
 		Ok(KvStore {
-			index_store: RwLock::new(index_map),
+			index_store: Arc::new(RwLock::new(index_map)),
 			storage: storage
 		})
 	}

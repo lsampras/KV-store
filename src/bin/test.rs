@@ -12,6 +12,7 @@ use kvs::KvStore;
 use kvs::command::LogRecord;
 use kvs::traits::KvsEngine;
 use std::sync::{Arc, Mutex};
+use kvs::threadpool::NaiveThreadPool;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Direction {
@@ -50,21 +51,28 @@ struct Moves {
 
 
 fn main() -> KVResult<()>{
-	let mut store =	KvStore::new().unwrap();
-	store.set("key23".into(), "val23".into()).unwrap();
-	store.set("key23".into(), "val24".into()).unwrap();
-	store.set("key2".into(), "val3".into()).unwrap();
-	store.set("key4".into(), "val".into()).unwrap();
-	store.set("key10".into(), "notval".into()).unwrap();
-	store.set("key69".into(), "ooooo".into()).unwrap();
-	store.remove("key23".into()).unwrap();
-	store.remove("key4".into()).unwrap();
-	store.set("key23".into(), "val".into()).unwrap();
-	println!("{}", store.get("key23".to_owned())?.unwrap());
-	store.state_print();
-	println!("\n\n\n{:?}\n\n", store.compaction());
-	store.set("key23".into(), "va2l".into()).unwrap();
-	store.state_print();
+	let mut pool = NaiveThreadPool::new(4);
+	for i in 1..10 {
+		// let a = i;
+		pool.spawn(move || {
+			println!("test {}", i);
+		});
+	}
+	// let mut store =	KvStore::new().unwrap();
+	// store.set("key23".into(), "val23".into()).unwrap();
+	// store.set("key23".into(), "val24".into()).unwrap();
+	// store.set("key2".into(), "val3".into()).unwrap();
+	// store.set("key4".into(), "val".into()).unwrap();
+	// store.set("key10".into(), "notval".into()).unwrap();
+	// store.set("key69".into(), "ooooo".into()).unwrap();
+	// store.remove("key23".into()).unwrap();
+	// store.remove("key4".into()).unwrap();
+	// store.set("key23".into(), "val".into()).unwrap();
+	// println!("{}", store.get("key23".to_owned())?.unwrap());
+	// store.state_print();
+	// println!("\n\n\n{:?}\n\n", store.compaction());
+	// store.set("key23".into(), "va2l".into()).unwrap();
+	// store.state_print();
 	// print
 	// let mut iterator = reader.lock().unwrap();
 	// println!("{:?}", &iterator);
