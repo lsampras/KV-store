@@ -14,9 +14,9 @@ prioritizing simplicity over performance
 - KVS currently uses a single WAL for writing logs, a memory index is maintained for finding the elements from logs for reads
 - Currently KVS supports a naive form of compaction where all the current data is compacted into a single compact log, this is not yet sharded.
 
+- Concurrency & Multithreading: use separate threads for reading & share the in-memory indexes between threads
 
 #### Pending Implementation
 
-- Concurrency & Multithreading: use separate threads for reading & share the in-memory indexes between threads
 - Sharding: Shard the compacted logs for better performance
 - Other key optimizations
